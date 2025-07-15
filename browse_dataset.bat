@@ -1,0 +1,1 @@
+python tools/analysis_tools/browse_dataset.py custom_configs/yolof_r50-c5_8xb8-1x_coco_custom_20e.py --output-dir outputs/dataset_examples

@@ -1,0 +1,1 @@
+python tools/train.py custom_configs/faster_rcnn/faster-rcnn_r50-tnr-pre_fpn_1x_coco_full_custom_br_hue.py

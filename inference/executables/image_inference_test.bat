@@ -1,0 +1,1 @@
+python demo/image_demo.py test_swimmer.jpg yolof_r50-c5_8xb8-1x_coco_custom.py --weights work_dirs\yolof_r50-c5_8xb8-1x_coco_custom\epoch_5.pth --show --device cpu

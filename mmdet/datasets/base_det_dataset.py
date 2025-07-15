@@ -74,6 +74,7 @@ class BaseDetDataset(BaseDataset):
             return
         # load data information
         self.data_list = self.load_data_list()
+        
         # get proposals from file
         if self.proposal_file is not None:
             self.load_proposals()

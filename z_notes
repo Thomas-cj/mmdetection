@@ -1,0 +1,19 @@
+Some general suggestions to deal with such NaN losses:
+
+check if the dataset annotations are correct
+reduce the learning rate
+extend the warmup iterations
+add gradient clipping
+
+
+
+bbox = x, y, w, h .
+
+Faster rcnn infers at 1.3fps
+
+video cropping for start light detection
+    top:600
+    left:1700
+    right:200
+    bottom:150
+    
