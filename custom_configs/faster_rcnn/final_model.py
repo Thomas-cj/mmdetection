@@ -53,15 +53,7 @@ param_scheduler = [
 optim_wrapper = dict(
     optimizer=dict(type='AdamW', lr=0.0001, weight_decay=0.1),
     paramwise_cfg=dict(norm_decay_mult=0., bypass_duplicate=True))
-# optim_wrapper = dict(
-#     optimizer=dict(_delete_=True, type='AdamW', lr=0.0001, weight_decay=0.1),
-#     paramwise_cfg=dict(norm_decay_mult=0., bypass_duplicate=True))
 
-# Default setting for scaling LR automatically
-#   - `enable` means enable scaling LR automatically
-#       or not by default.
-#   - `base_batch_size` = (8 GPUs) x (2 samples per GPU).
-# auto_scale_lr = dict(enable=False, base_batch_size=16)
 
 
 # Detection dataset settings

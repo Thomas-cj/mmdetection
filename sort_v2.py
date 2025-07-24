@@ -94,7 +94,7 @@ def convert_x_to_bbox(x,score=None):
 class KalmanBoxTracker(object):
     """
     This class represents the internal state of individual tracked objects observed as bbox.
-    """
+    """ 
     count = 0
     def __init__(self,bbox):
         """
@@ -150,19 +150,31 @@ class KalmanBoxTracker(object):
         Returns the current bounding box estimate.
         """
         return convert_x_to_bbox(self.kf.x)
+    
+    def get_predicted_bbox(self):
+        """
+        Returns the *last predicted* bounding box estimate from the Kalman filter's history.
+        This is useful for outputting a box even when no current detection is associated.
+        """
+        # most recent prediction.
+        if self.history:
+            return self.history[-1]
+        else:
+            # return the current state which is essentially the initial prediction
+            return self.get_state()
 
-    def is_moving_right_to_left(self, min_speed_threshold=8):
+    def is_moving_right_to_left(self, min_speed_threshold=2):
         """
         Checks if the object's estimated velocity indicates movement from right to left.
         """
         vx = self.kf.x[4, 0] # Estimated velocity in x-direction
         vy = self.kf.x[5, 0] # Estimated velocity in y-direction
 
-        # Calculate the magnitude of the velocity
+        # find magnitude of the velocity
         speed = np.sqrt(vx**2 + vy**2)
 
         # Check if the x-velocity is negative and the object is actually moving
-        if vx < 0 and speed > min_speed_threshold:
+        if vx < 0 and speed >= min_speed_threshold:
             return True
         else:
             return False
@@ -213,7 +225,7 @@ def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
 
 
 class Sort(object):
-    def __init__(self, max_age=10, min_hits=3, iou_threshold=0.3):
+    def __init__(self, max_age=10, min_hits=3, iou_threshold=0.3, output_predicted=True):
         """
         Sets key parameters for SORT
         """
@@ -222,6 +234,7 @@ class Sort(object):
         self.iou_threshold = iou_threshold
         self.trackers = []
         self.frame_count = 0
+        self.output_predicted = output_predicted
         
 
 
@@ -251,12 +264,12 @@ class Sort(object):
             if np.any(np.isnan(pos)):
                 to_del_tracker_indices.append(t_idx)
             
-            # check if velocity is positive, so left to right
-            predicted_vx = tracker_obj.kf.x[4, 0]
-            predicted_speed = np.sqrt(predicted_vx**2 + tracker_obj.kf.x[5, 0]**2)
+            # # check if velocity is positive, so left to right
+            # predicted_vx = tracker_obj.kf.x[4, 0]
+            # predicted_speed = np.sqrt(predicted_vx**2 + tracker_obj.kf.x[5, 0]**2)
 
-            if predicted_vx > 0.5 and predicted_speed > 0.5:
-                predicted_l_to_r_tracker_indices.append(t_idx)
+            # if predicted_vx > 0.5 and predicted_speed > 0.5:
+            #     predicted_l_to_r_tracker_indices.append(t_idx)
             
         # Clean up trackers with NaN positions (should ideally not happen with a robust Kalman)
         # Using reversed order for pop to avoid index issues
@@ -268,18 +281,22 @@ class Sort(object):
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks_predicted_bboxes, self.iou_threshold)
 
         # update matched trackers
+        # for m in matched:
+        #     det_idx = m[0]
+        #     tracker_idx = m[1]
+            
+        #     # update tracker only if movement is NOT left to right
+        #     if tracker_idx not in predicted_l_to_r_tracker_indices:
+        #         self.trackers[tracker_idx].update(dets[det_idx, :])
         for m in matched:
             det_idx = m[0]
             tracker_idx = m[1]
-            
-            # update tracker only if movement is NOT left to right
-            if tracker_idx not in predicted_l_to_r_tracker_indices:
+            if tracker_idx < len(self.trackers): # Keep bounds check
                 self.trackers[tracker_idx].update(dets[det_idx, :])
-            
 
         # create and initialise new trackers for unmatched detections
         for i in unmatched_dets:
-            
+            # create new tracekrs for unmatched dets
             trk = KalmanBoxTracker(dets[i,:])
             self.trackers.append(trk)
         
@@ -288,18 +305,47 @@ class Sort(object):
         # Iterate through trackers in reverse for safe popping
         for i in range(len(self.trackers) - 1, -1, -1):
             trk = self.trackers[i]
-            d = trk.get_state()[0] # Get current estimated bbox [x1,y1,x2,y2]
 
-            # Condition 1: Basic SORT eligibility (track is "active" or recently updated)
-            is_active_sort_track = (trk.time_since_update < 1) and \
-                                   (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)
+            output_bbox = None # Initialize as None
 
-            # Condition 2: Check if the track is moving right-to-left based on its CURRENT estimated velocity
-            is_moving_right_to_left = trk.is_moving_right_to_left(0.5)
+            # If the tracker was updated in this frame (matched a detection)
+            if trk.time_since_update < 1: 
+                output_bbox = trk.get_state()[0] # Use the *updated* state (corrected by detection)
+            # If the tracker was *not* updated (no detection matched), AND the flag is True
+            # AND it's still within its max_age, AND it has enough hits for a stable prediction
+            elif self.output_predicted and trk.time_since_update > 0 and trk.time_since_update <= self.max_age:
+                #if trk.hits >= self.min_hits: # Important: Only output predicted if it's a stable track
+                output_bbox = trk.get_predicted_bbox()[0] # Use the *predicted* state
 
-            if is_active_sort_track and is_moving_right_to_left:
-                # Append to return list if both conditions are met
-                ret.append(np.concatenate((d, [trk.id + 1])).reshape(1, -1)) # +1 for MOT benchmark
+            # Apply your existing conditions (is_active_sort_track and is_moving_right_to_left)
+            # to the `output_bbox` if it was determined to be output
+            if output_bbox is not None:
+                is_matched_track_established = (trk.time_since_update < 1) and \
+                                           (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)
+            
+            # Condition for *predicted* tracks to be considered "alive" and outputtable
+            is_predicted_track_alive = (trk.time_since_update > 0) and \
+                                       (trk.time_since_update <= self.max_age) and \
+                                       self.output_predicted # Already checked above, but for clarity
+
+            # Your directional filter (assuming `vx < 0` is what you want for right-to-left)
+            is_moving_right_to_left = trk.is_moving_right_to_left(0) # speed_threshold=0, only checks vx<0
+
+            # Combined Output Logic:
+            # Output if it's an established matched track that meets direction,
+            # OR if it's an alive predicted track that meets direction.
+            # if (is_matched_track_established and is_moving_right_to_left) or \
+            #    (is_predicted_track_alive and is_moving_right_to_left):
+            
+            if (is_matched_track_established) or (is_predicted_track_alive ):
+                ret.append(np.concatenate((output_bbox, [trk.id + 1])).reshape(1, -1))
+
+            
+                # is_active_sort_track = (trk.hit_streak >= self.min_hits or self.frame_count <= self.min_hits)
+                # is_moving_right_to_left = trk.is_moving_right_to_left(0)
+                
+                # if is_active_sort_track and is_moving_right_to_left:
+                #     ret.append(np.concatenate((output_bbox, [trk.id + 1])).reshape(1, -1))
 
             # Remove dead tracklets (either too old or lost too many updates)
             if trk.time_since_update > self.max_age:

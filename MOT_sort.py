@@ -119,6 +119,11 @@ class KalmanBoxTracker(object):
         self.hits = 0
         self.hit_streak = 0
         self.age = 0
+        if len(bbox) >= 5:
+            self.scores = [bbox[4]] 
+        else:
+            self.scores = [] # If no score is provided, initialize empty
+        
     
 
     def update(self,bbox):
@@ -130,6 +135,7 @@ class KalmanBoxTracker(object):
         self.hits += 1
         self.hit_streak += 1
         self.kf.update(convert_bbox_to_z(bbox))
+        
 
     def predict(self):
         """
@@ -166,6 +172,14 @@ class KalmanBoxTracker(object):
             return True
         else:
             return False
+        
+    def get_average_score(self):
+        """
+        Returns the average score of the bounding boxes associated with this tracker.
+        """
+        if len(self.scores) > 0:
+            return np.mean(self.scores)
+        return 0.0 
     
 def associate_detections_to_trackers(detections,trackers,iou_threshold = 0.3):
     """
@@ -265,7 +279,7 @@ class Sort(object):
             self.trackers.pop(t_idx)
 
         # Perform association between current detections and predicted tracker locations
-        matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks_predicted_bboxes, self.iou_threshold)
+        matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets[:,:4], trks_predicted_bboxes[:,:4], self.iou_threshold)
 
         # update matched trackers
         for m in matched:
@@ -299,7 +313,7 @@ class Sort(object):
 
             if is_active_sort_track and is_moving_right_to_left:
                 # Append to return list if both conditions are met
-                ret.append(np.concatenate((d, [trk.id + 1])).reshape(1, -1)) # +1 for MOT benchmark
+                ret.append(np.concatenate((d, [trk.id], [trk.get_average_score()])).reshape(1, -1))
 
             # Remove dead tracklets (either too old or lost too many updates)
             if trk.time_since_update > self.max_age:
@@ -309,5 +323,5 @@ class Sort(object):
             ret = np.concatenate(ret)
             
             return ret
-        return np.empty((0, 5))
+        return np.empty((0, 6))
 
